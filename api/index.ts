@@ -941,12 +941,14 @@ const getSystemContractFormatServer = (settings: any, type: 'PARTIAL_SETTLEMENT'
 interface ResolutionContextServer {
   userId?: string;
   originalId?: string;
+  fullId?: string;
   sequence?: number;
   n?: number;
   slgh?: number;
   slttmp?: number;
   phone?: string;
   rank?: string;
+  abbr?: string;
 }
 
 const resolveMasterConfigServer = (
@@ -970,13 +972,33 @@ const resolveMasterConfigServer = (
         let replacement = "";
         const type = cfg.systemMeaning;
         const cfgFormat = cfg.format;
-        
-        // Handle new contract formats and transfer content formats specifically
-        if (type === 'contract_id_new' || type === 'contract_partial_format' || type === 'contract_extension_format' ||
+        const abbr = cfg.abbreviation.toUpperCase();
+
+        // 1. Smart Fallback: Priority 1 - Use existing data from context if type matches OR if abbreviation is a common system name
+        let dataValue = null;
+        if (type === 'user_id' && context.userId) dataValue = context.userId;
+        if ((type === 'contract_id' || type === 'contract_id_original') && context.originalId) dataValue = context.originalId;
+        if (type === 'sequence' && (context.sequence !== undefined || context.n !== undefined)) {
+          dataValue = (context.sequence ?? context.n ?? 0).toString();
+        }
+        if (type === 'phone' && context.phone) dataValue = context.phone;
+
+        if (dataValue === null) {
+          if ((abbr === 'US' || abbr === 'USER' || abbr === 'ID') && context.userId) {
+            dataValue = context.userId;
+          } else if ((abbr === 'MHD' || abbr === 'CONTRACT' || abbr === 'HD') && context.originalId) {
+            dataValue = context.originalId;
+          } else if (abbr === 'N' && (context.sequence !== undefined || context.n !== undefined)) {
+            dataValue = (context.sequence ?? context.n ?? 0).toString();
+          }
+        }
+
+        if (dataValue !== null) {
+          replacement = dataValue;
+        } else if (type === 'contract_id_new' || type === 'contract_partial_format' || type === 'contract_extension_format' ||
             type === 'transfer_full' || type === 'transfer_extension' || type === 'transfer_partial' || type === 'transfer_upgrade' || type === 'transfer_disburse') {
           let targetFormat = cfgFormat;
           if (!targetFormat || targetFormat.trim() === "") {
-            // Fallback to system settings if no custom format is provided for the abbreviation
             if (type === 'contract_partial_format') targetFormat = getSystemContractFormatServer(settings, 'PARTIAL_SETTLEMENT', "{MHD}NEW");
             else if (type === 'contract_extension_format') targetFormat = getSystemContractFormatServer(settings, 'EXTENSION', "{MHD}NEW");
             else if (type === 'transfer_full') targetFormat = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.key === 'FULL_SETTLEMENT')?.value || "TAT TOAN {ID}";
@@ -987,6 +1009,8 @@ const resolveMasterConfigServer = (
             else targetFormat = "{MHD}NEW";
           }
           replacement = resolveMasterConfigServer(targetFormat, settings, context, depth + 1);
+        } else if (cfgFormat && cfgFormat.trim() !== "") {
+          replacement = resolveMasterConfigServer(cfgFormat, settings, context, depth + 1);
         } else {
           // Otherwise use system logic
           const now = new Date();
@@ -1006,7 +1030,7 @@ const resolveMasterConfigServer = (
               replacement = randomNum;
               break;
             case 'user_id':
-              replacement = context.userId?.slice(-4).toUpperCase() || "USER";
+              replacement = context.userId || "USER";
               break;
             case 'contract_id':
             case 'contract_id_original':
@@ -1053,18 +1077,9 @@ const resolveMasterConfigServer = (
   });
 
   // 2. Handle system placeholders if not replaced by user variables
-  result = result
-    .replace(/\{ID\}|\{MHD\}|\{Mã Hợp Đồng\}|\{LOAN_ID\}/gi, context.originalId || '')
-    .replace(/\{USER\}|\{MÃ USER\}|\{NGƯỜI DÙNG\}/gi, context.userId || '')
-    .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, context.phone || '')
-    .replace(/\{RANK\}|\{HẠNG\}|\{HANG\}|\{TÊN HANG\}|\{TÊN HẠNG\}/gi, context.rank || '')
-    .replace(/\{SLGH\}|\{SỐ LẦN GIA HẠN\}/gi, (context.slgh || 0).toString())
-    .replace(/\{SLTTMP\}|\{SỐ LẦN TTMP\}/gi, (context.slttmp || 0).toString())
-    .replace(/\{N\}|\{SEQUENCE\}/gi, (context.sequence || context.n || 0).toString());
-
-  const randomRegex = /\{(RANDOM|MÃ NGẪU NHIÊN|RD)\s*(\d+)?\s*(SỐ)?\}/gi;
-  result = result.replace(randomRegex, (match, p1, p2) => {
-    const length = p2 ? parseInt(p2) : 4;
+  const randomRegex = /\{(RANDOM|MÃ NGẪU NHIÊN|RD)\s*(\d+)?\s*(SỐ)?\}|\{(MHD|RD|HD)\s*(\d+)\s*(SỐ)?\}/gi;
+  result = result.replace(randomRegex, (match, p1, p2, p3, p4, p5) => {
+    const length = p2 ? parseInt(p2) : (p5 ? parseInt(p5) : 4);
     let randomNum = '';
     for (let i = 0; i < length; i++) {
       randomNum += Math.floor(Math.random() * 10).toString();
@@ -1077,15 +1092,27 @@ const resolveMasterConfigServer = (
   const month = (now.getMonth() + 1).toString().padStart(2, '0');
   const day = now.getDate().toString().padStart(2, '0');
   const dateStr = `${day}${month}${year.slice(-2)}`;
-  const userPart = context.userId?.slice(-4).toUpperCase() || "USER";
+  const userPart = context.userId || "USER";
 
-  // Legacy placeholders
+  // Align with utils.ts resolveMasterConfig legacy logic:
+  // {ID} and {USER} become userId
+  // {MHD} and {CONTRACT} become originalId
   result = result.replace(/\{ID\}|\{USER\}/gi, userPart);
   result = result.replace(/\{MHD\}|\{CONTRACT\}/gi, context.originalId || "HD0001");
   result = result.replace(/\{N\}/gi, (context.sequence !== undefined ? context.sequence : (context.n !== undefined ? context.n : 0)).toString());
-  result = result.replace(/\{SLGH\}/gi, (context.slgh || 0).toString());
-  result = result.replace(/\{SLTTMP\}/gi, (context.slttmp || 0).toString());
   result = result.replace(/\{DATE\}|\{NGÀY\}/gi, dateStr);
+
+  // Final pass for specific payment placeholders (matching utils.ts generatePaymentContent)
+  // These only apply if not already replaced by resolveMasterConfig
+  const fullId = context.fullId || context.originalId || '';
+  result = result
+    .replace(/\{Mã Hợp Đồng\}|\{LOAN_ID\}/gi, fullId)
+    .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, context.phone || '')
+    .replace(/\{RANK\}|\{HẠNG\}|\{HANG\}|\{TÊN HANG\}|\{TÊN HẠNG\}/gi, context.rank || '')
+    .replace(/\{SLGH\}|\{SỐ LẦN GIA HẠN\}|\{EXTENSION_COUNT\}/gi, (context.slgh || 0).toString())
+    .replace(/\{SLTTMP\}|\{SỐ LẦN TTMP\}|\{PARTIAL_COUNT\}/gi, (context.slttmp || 0).toString())
+    .replace(/\{VT\}|\{VIẾT TẮT\}|\{VIET TAT\}/gi, context.abbr || '')
+    .replace(/\{N\}|\{SEQUENCE\}/gi, (context.sequence || context.n || 0).toString());
 
   return result;
 };
@@ -2254,8 +2281,7 @@ router.post("/payment/create-link", async (req, res) => {
       
       if (type === 'UPGRADE') {
         const masterUpgrade = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_upgrade');
-        const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'Nâng hạng' || c.key === 'UPGRADE');
-        const template = masterUpgrade?.format || config?.value || "HANG {RANK} {USER}";
+        const template = masterUpgrade?.format || "HANG {RANK} {USER}";
         
         const rankNames: Record<string, string> = {
           'standard': 'TIEU CHUAN',
@@ -2273,20 +2299,13 @@ router.post("/payment/create-link", async (req, res) => {
         finalDescription = resolveMasterConfigServer(template, settings, {
           userId: id,
           phone: userPhone,
-          rank: rankName
+          rank: rankName,
+          abbr: masterUpgrade?.abbreviation || 'NH'
         });
-
-        const upgradeOp = getBusinessOp(settings, 'UPGRADE');
-        const abbr = config?.abbr || upgradeOp?.abbr || 'NH';
-        finalDescription = finalDescription
-          .replace(/\{ID\}|\{USER\}|\{MÃ USER\}|\{MA USER\}|\{TEN USER\}/gi, id)
-          .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, userPhone)
-          .replace(/\{RANK\}|\{HẠNG\}|\{HANG\}|\{TÊN HẠNG CẦN NÂNG\}|\{TEN HANG NANG CAP\}|\{TEN HANG\}|\{TÊN HẠNG\}/gi, rankName)
-          .replace(/\{VT\}|\{VIẾT TẮT\}|\{VIET TAT\}/gi, abbr);
       } else {
         let template = "";
         let loanData: any = null;
-        let abbr = "";
+        let currentAbbr = "";
         
         if (settleType === 'PARTIAL' || settleType === 'PRINCIPAL') {
           // Fetch loan to get counts and originalBaseId
@@ -2295,26 +2314,20 @@ router.post("/payment/create-link", async (req, res) => {
           
           if (settleType === 'PARTIAL') {
             const masterPartial = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_partial');
-            const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'TT 1 phần' || c.key === 'PARTIAL_SETTLEMENT');
-            template = masterPartial?.format || config?.value || "TTMP {ID} LAN {SLTTMP}";
-            const partialOp = getBusinessOp(settings, 'PARTIAL_SETTLEMENT');
-            abbr = config?.abbr || partialOp?.abbr || 'TTMP';
+            template = masterPartial?.format || "TTMP {ID} LAN {SLTTMP}";
+            currentAbbr = masterPartial?.abbreviation || 'TTMP';
           } else {
             const masterExtension = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_extension');
-            const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'Gia hạn' || c.key === 'EXTENSION');
-            template = masterExtension?.format || config?.value || "GIA HAN {ID} LAN {SLGH}";
-            const extensionOp = getBusinessOp(settings, 'EXTENSION');
-            abbr = config?.abbr || extensionOp?.abbr || 'GH';
+            template = masterExtension?.format || "GIA HAN {ID} LAN {SLGH}";
+            currentAbbr = masterExtension?.abbreviation || 'GH';
           }
         } else {
           // Fetch loan for full settlement to get user info and originalBaseId
           const { data } = await client.from('loans').select('userId, originalBaseId, users(phone)').eq('id', id).single();
           loanData = data;
           const masterFull = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_full');
-          const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'Tất toán' || c.key === 'FULL_SETTLEMENT');
-          template = masterFull?.format || config?.value || "TAT TOAN {ID}";
-          const fullOp = getBusinessOp(settings, 'FULL_SETTLEMENT');
-          abbr = config?.abbr || fullOp?.abbr || 'TT';
+          template = masterFull?.format || "TAT TOAN {ID}";
+          currentAbbr = masterFull?.abbreviation || 'TT';
         }
         
         const userPhone = loanData?.users?.phone || loanData?.userPhone || '';
@@ -2331,7 +2344,6 @@ router.post("/payment/create-link", async (req, res) => {
         let baseId = loanData?.originalBaseId || '';
         if (!baseId) {
           const cleanId = id;
-          const masterConfigs = Array.isArray(settings?.MASTER_CONFIGS) ? settings.MASTER_CONFIGS : [];
           const allAbbrs = masterConfigs
             .filter((c: any) => c.category === 'ABBREVIATION' || c.category === 'TRANSFER_CONTENT' || c.category === 'CONTRACT_NEW')
             .map((c: any) => c.abbreviation)
@@ -2350,27 +2362,20 @@ router.post("/payment/create-link", async (req, res) => {
         finalDescription = resolveMasterConfigServer(template, settings, {
           userId: loanData?.userId || '',
           originalId: baseId || id,
+          fullId: id,
           sequence: settleType === 'PARTIAL' ? (partialCount + 1) : (extensionCount + 1),
           n: settleType === 'PARTIAL' ? (partialCount + 1) : (extensionCount + 1),
           slgh: extensionCount + 1,
           slttmp: partialCount + 1,
           phone: userPhone,
-          rank: '' // Rank not easily available here without more joins
+          rank: '',
+          abbr: currentAbbr
         });
-
-        // Final pass for legacy placeholders if any remain
-        const finalAbbr = abbr;
-        finalDescription = finalDescription
-          .replace(/\{ID\}|\{Mã Hợp Đồng\}|\{LOAN_ID\}|\{MHD\}/gi, baseId || id)
-          .replace(/\{USER\}|\{MÃ USER\}|\{NGƯỜI DÙNG\}/gi, loanData?.userId || '')
-          .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, userPhone)
-          .replace(/\{SỐ LẦN GIA HẠN\}|\{EXTENSION_COUNT\}|\{SLGH\}/gi, settleType === 'PRINCIPAL' ? (extensionCount + 1).toString() : '')
-          .replace(/\{SỐ LẦN TTMP\}|\{PARTIAL_COUNT\}|\{SLTTMP\}/gi, settleType === 'PARTIAL' ? (partialCount + 1).toString() : '')
-          .replace(/\{VT\}|\{VIẾT TẮT\}|\{VIET TAT\}/gi, finalAbbr);
       }
     }
 
-    // Ensure description is valid for PayOS (max 25 chars for some banks, but PayOS allows more. Let's keep it reasonable)
+    // PayOS strictly limits description to 25 characters. 
+    // We must truncate to avoid API errors, but we should do it after all replacements.
     if (finalDescription.length > 25) {
       finalDescription = finalDescription.substring(0, 25);
     }
