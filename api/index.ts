@@ -973,7 +973,7 @@ const resolveMasterConfigServer = (
         
         // Handle new contract formats and transfer content formats specifically
         if (type === 'contract_id_new' || type === 'contract_partial_format' || type === 'contract_extension_format' ||
-            type === 'transfer_full' || type === 'transfer_extension' || type === 'transfer_partial' || type === 'transfer_disburse') {
+            type === 'transfer_full' || type === 'transfer_extension' || type === 'transfer_partial' || type === 'transfer_upgrade' || type === 'transfer_disburse') {
           let targetFormat = cfgFormat;
           if (!targetFormat || targetFormat.trim() === "") {
             // Fallback to system settings if no custom format is provided for the abbreviation
@@ -982,6 +982,7 @@ const resolveMasterConfigServer = (
             else if (type === 'transfer_full') targetFormat = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.key === 'FULL_SETTLEMENT')?.value || "TAT TOAN {ID}";
             else if (type === 'transfer_extension') targetFormat = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.key === 'EXTENSION')?.value || "GIA HAN {ID} LAN {SLGH}";
             else if (type === 'transfer_partial') targetFormat = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.key === 'PARTIAL_SETTLEMENT')?.value || "TTMP {ID} LAN {SLTTMP}";
+            else if (type === 'transfer_upgrade') targetFormat = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.key === 'UPGRADE')?.value || "HANG {RANK} {USER}";
             else if (type === 'transfer_disburse') targetFormat = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.key === 'DISBURSE')?.value || "GIAI NGAN {ID}";
             else targetFormat = "{MHD}NEW";
           }
@@ -1052,7 +1053,16 @@ const resolveMasterConfigServer = (
   });
 
   // 2. Handle system placeholders if not replaced by user variables
-  const randomRegex = /\{(RANDOM|MÃ NGẪU NHIÊN|MHD|RD)\s*(\d+)?\s*(SỐ)?\}/gi;
+  result = result
+    .replace(/\{ID\}|\{MHD\}|\{Mã Hợp Đồng\}|\{LOAN_ID\}/gi, context.originalId || '')
+    .replace(/\{USER\}|\{MÃ USER\}|\{NGƯỜI DÙNG\}/gi, context.userId || '')
+    .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, context.phone || '')
+    .replace(/\{RANK\}|\{HẠNG\}|\{HANG\}|\{TÊN HANG\}|\{TÊN HẠNG\}/gi, context.rank || '')
+    .replace(/\{SLGH\}|\{SỐ LẦN GIA HẠN\}/gi, (context.slgh || 0).toString())
+    .replace(/\{SLTTMP\}|\{SỐ LẦN TTMP\}/gi, (context.slttmp || 0).toString())
+    .replace(/\{N\}|\{SEQUENCE\}/gi, (context.sequence || context.n || 0).toString());
+
+  const randomRegex = /\{(RANDOM|MÃ NGẪU NHIÊN|RD)\s*(\d+)?\s*(SỐ)?\}/gi;
   result = result.replace(randomRegex, (match, p1, p2) => {
     const length = p2 ? parseInt(p2) : 4;
     let randomNum = '';
@@ -2240,9 +2250,13 @@ router.post("/payment/create-link", async (req, res) => {
     
     let finalDescription = description;
     if (!finalDescription) {
+      const masterConfigs = Array.isArray(settings?.MASTER_CONFIGS) ? settings.MASTER_CONFIGS : [];
+      
       if (type === 'UPGRADE') {
+        const masterUpgrade = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_upgrade');
         const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'Nâng hạng' || c.key === 'UPGRADE');
-        const template = config?.value || "HANG {RANK} {USER}";
+        const template = masterUpgrade?.format || config?.value || "HANG {RANK} {USER}";
+        
         const rankNames: Record<string, string> = {
           'standard': 'TIEU CHUAN',
           'bronze': 'DONG',
@@ -2256,9 +2270,15 @@ router.post("/payment/create-link", async (req, res) => {
         const { data: userData } = await client.from('users').select('phone').eq('id', id).single();
         const userPhone = userData?.phone || '';
 
+        finalDescription = resolveMasterConfigServer(template, settings, {
+          userId: id,
+          phone: userPhone,
+          rank: rankName
+        });
+
         const upgradeOp = getBusinessOp(settings, 'UPGRADE');
         const abbr = config?.abbr || upgradeOp?.abbr || 'NH';
-        finalDescription = template
+        finalDescription = finalDescription
           .replace(/\{ID\}|\{USER\}|\{MÃ USER\}|\{MA USER\}|\{TEN USER\}/gi, id)
           .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, userPhone)
           .replace(/\{RANK\}|\{HẠNG\}|\{HANG\}|\{TÊN HẠNG CẦN NÂNG\}|\{TEN HANG NANG CAP\}|\{TEN HANG\}|\{TÊN HẠNG\}/gi, rankName)
@@ -2274,13 +2294,15 @@ router.post("/payment/create-link", async (req, res) => {
           loanData = data;
           
           if (settleType === 'PARTIAL') {
+            const masterPartial = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_partial');
             const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'TT 1 phần' || c.key === 'PARTIAL_SETTLEMENT');
-            template = config?.value || "TTMP {ID} LAN {SLTTMP}";
+            template = masterPartial?.format || config?.value || "TTMP {ID} LAN {SLTTMP}";
             const partialOp = getBusinessOp(settings, 'PARTIAL_SETTLEMENT');
             abbr = config?.abbr || partialOp?.abbr || 'TTMP';
           } else {
+            const masterExtension = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_extension');
             const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'Gia hạn' || c.key === 'EXTENSION');
-            template = config?.value || "GIA HAN {ID} LAN {SLGH}";
+            template = masterExtension?.format || config?.value || "GIA HAN {ID} LAN {SLGH}";
             const extensionOp = getBusinessOp(settings, 'EXTENSION');
             abbr = config?.abbr || extensionOp?.abbr || 'GH';
           }
@@ -2288,8 +2310,9 @@ router.post("/payment/create-link", async (req, res) => {
           // Fetch loan for full settlement to get user info and originalBaseId
           const { data } = await client.from('loans').select('userId, originalBaseId, users(phone)').eq('id', id).single();
           loanData = data;
+          const masterFull = masterConfigs.find((c: any) => c.systemMeaning === 'transfer_full');
           const config = settings.TRANSFER_CONTENTS_CONFIG?.find((c: any) => c.original === 'Tất toán' || c.key === 'FULL_SETTLEMENT');
-          template = config?.value || "TAT TOAN {ID}";
+          template = masterFull?.format || config?.value || "TAT TOAN {ID}";
           const fullOp = getBusinessOp(settings, 'FULL_SETTLEMENT');
           abbr = config?.abbr || fullOp?.abbr || 'TT';
         }
@@ -2336,13 +2359,14 @@ router.post("/payment/create-link", async (req, res) => {
         });
 
         // Final pass for legacy placeholders if any remain
+        const finalAbbr = abbr;
         finalDescription = finalDescription
           .replace(/\{ID\}|\{Mã Hợp Đồng\}|\{LOAN_ID\}|\{MHD\}/gi, baseId || id)
           .replace(/\{USER\}|\{MÃ USER\}|\{NGƯỜI DÙNG\}/gi, loanData?.userId || '')
           .replace(/\{PHONE\}|\{SĐT\}|\{SDT\}|\{SỐ ĐIỆN THOẠI\}|\{SO DIEN THOAI\}/gi, userPhone)
           .replace(/\{SỐ LẦN GIA HẠN\}|\{EXTENSION_COUNT\}|\{SLGH\}/gi, settleType === 'PRINCIPAL' ? (extensionCount + 1).toString() : '')
           .replace(/\{SỐ LẦN TTMP\}|\{PARTIAL_COUNT\}|\{SLTTMP\}/gi, settleType === 'PARTIAL' ? (partialCount + 1).toString() : '')
-          .replace(/\{VT\}|\{VIẾT TẮT\}|\{VIET TAT\}/gi, abbr);
+          .replace(/\{VT\}|\{VIẾT TẮT\}|\{VIET TAT\}/gi, finalAbbr);
       }
     }
 
