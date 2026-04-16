@@ -2241,6 +2241,7 @@ END $$;`;
                                     ...localSettings,
                                     CONTRACT_CLAUSES: defaultSettings.CONTRACT_CLAUSES
                                   });
+                                  setHasChanges(true);
                                   toast.success("Đã đồng bộ nội dung chuyên nghiệp!");
                                 }
                               }}
@@ -2292,6 +2293,7 @@ END $$;`;
                                 ...localSettings,
                                 CONTRACT_CLAUSES: { ...localSettings.CONTRACT_CLAUSES, clauses: newClauses }
                               });
+                              setHasChanges(true);
                             }}
                             className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500 hover:bg-blue-500/20 transition-all border border-blue-500/20"
                           >
@@ -2310,6 +2312,7 @@ END $$;`;
                                   ...localSettings,
                                   CONTRACT_CLAUSES: { ...localSettings.CONTRACT_CLAUSES, clauses: newClauses }
                                 });
+                                setHasChanges(true);
                               }}
                               className="absolute top-2 right-2 w-5 h-5 rounded-md bg-red-500/10 flex items-center justify-center text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                             >
@@ -2495,7 +2498,11 @@ END $$;`;
                     <button 
                       onClick={() => handleSaveSettings(['CONTRACT_CLAUSES'])}
                       disabled={isSavingSettings || !hasChanges}
-                      className="w-full bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 text-blue-500 font-black py-3 rounded-xl text-[8px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      className={`w-full font-black py-3 rounded-xl text-[8px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
+                        hasChanges 
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20 border-transparent" 
+                          : "bg-blue-500/10 border border-blue-500/20 text-blue-500"
+                      }`}
                     >
                       {isSavingSettings ? <Loader2 className="animate-spin" size={12} /> : <Check size={12} />}
                       {hasChanges ? 'LƯU CẤU HÌNH HỢP ĐỒNG' : 'ĐÃ LƯU CẤU HÌNH'}
