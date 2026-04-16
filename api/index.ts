@@ -753,6 +753,21 @@ router.get("/public-settings", async (req, res) => {
 router.get("/settings", async (req, res) => {
   const client = initSupabase();
   const merged = await getMergedSettings(client);
+  
+  // Security: Filter sensitive keys for non-admins
+  const isAdmin = (req as any).user?.isAdmin === true;
+  if (!isAdmin) {
+    const publicSettings = { ...merged };
+    const sensitiveKeys = [
+      'SUPABASE_SERVICE_ROLE_KEY', 'JWT_SECRET', 'PAYOS_API_KEY', 
+      'PAYOS_CHECKSUM_KEY', 'ADMIN_PASSWORD', 'IMGBB_API_KEY'
+    ];
+    sensitiveKeys.forEach(key => {
+      delete (publicSettings as any)[key];
+    });
+    return res.json(publicSettings);
+  }
+  
   res.json(merged);
 });
 
@@ -1288,6 +1303,7 @@ router.post("/register", async (req, res) => {
       ...userData,
       id: userId,
       password: hashedPassword,
+      isAdmin: false, // Security: Ensure new users are never admins
       updatedAt: Date.now()
     };
 
@@ -1340,7 +1356,7 @@ router.get("/data", async (req, res) => {
     }
 
     const userId = req.query.userId as string;
-    const isAdmin = (req as any).user?.isAdmin === true || req.query.isAdmin === 'true';
+    const isAdmin = (req as any).user?.isAdmin === true;
     const isBackup = isAdmin && req.query.backup === 'true';
 
     // Individual query functions with role-based filtering and pagination
@@ -1514,12 +1530,19 @@ router.post("/users", async (req: any, res) => {
       return res.status(400).json({ error: "Dữ liệu phải là mảng" });
     }
 
-    // Security check: If not admin, can only update own record
+    // Security check: If not admin, can only update own record and CANNOT change isAdmin status
     if (!req.user?.isAdmin) {
       const otherUser = incomingUsers.find(u => u.id !== req.user.id);
       if (otherUser) {
         return res.status(403).json({ error: "Bạn không có quyền cập nhật dữ liệu của người khác" });
       }
+      
+      // Prevent privilege escalation: Ensure isAdmin is not changed or is explicitly false
+      incomingUsers.forEach(u => {
+        if (u.isAdmin !== undefined) {
+          u.isAdmin = false; // Force to false for non-admins
+        }
+      });
     }
 
     // Hash passwords for new users
@@ -1931,11 +1954,15 @@ router.post("/sync", async (req: any, res) => {
         return res.status(403).json({ error: "Bạn không có quyền cập nhật cấu hình hệ thống" });
       }
       
-      // Non-admins can only update their own data
+      // Non-admins can only update their own data and CANNOT change isAdmin status
       if (users && Array.isArray(users)) {
         if (users.some(u => u.id !== req.user.id)) {
           return res.status(403).json({ error: "Bạn không có quyền cập nhật dữ liệu của người khác" });
         }
+        // Force isAdmin to false for non-admins
+        users.forEach(u => {
+          if (u.isAdmin !== undefined) u.isAdmin = false;
+        });
       }
       
       if (loans && Array.isArray(loans)) {
