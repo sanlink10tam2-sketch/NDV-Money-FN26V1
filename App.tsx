@@ -597,6 +597,22 @@ const App: React.FC = () => {
     });
   };
 
+  // 1. View Enforcement - Ensure admins stay on admin views and users stay on user views
+  useEffect(() => {
+    if (!user || !user.isLoggedIn) return;
+
+    const isAdminView = currentView.toString().startsWith('ADMIN_');
+    const isUserOnlyView = [AppView.DASHBOARD, AppView.APPLY_LOAN, AppView.PROFILE, AppView.RANK_LIMITS].includes(currentView);
+
+    if (user.isAdmin && isUserOnlyView) {
+      console.log("[VIEW ENFORCEMENT] Admin redirected to Admin Dashboard");
+      setCurrentView(AppView.ADMIN_DASHBOARD);
+    } else if (!user.isAdmin && isAdminView) {
+      console.log("[VIEW ENFORCEMENT] User redirected to User Dashboard");
+      setCurrentView(AppView.DASHBOARD);
+    }
+  }, [user?.isAdmin, currentView]);
+
   useEffect(() => {
     if (user && currentView === AppView.LOGIN) {
       setCurrentView(!!user.isAdmin ? AppView.ADMIN_DASHBOARD : AppView.DASHBOARD);
@@ -1294,23 +1310,9 @@ const App: React.FC = () => {
     setIsGlobalProcessing(true);
     try {
       setRegisterError(null);
-      const existingUser = registeredUsers.find(u => 
-        u.phone === userData.phone || 
-        (userData.refZalo && u.refZalo === userData.refZalo) ||
-        (userData.idNumber && u.idNumber === userData.idNumber)
-      );
-      if (existingUser) {
-        if (existingUser.phone === userData.phone) {
-          setRegisterError("Số điện thoại này đã được đăng ký.");
-        } else if (userData.refZalo && existingUser.refZalo === userData.refZalo) {
-          setRegisterError("Số Zalo này đã được sử dụng bởi một tài khoản khác.");
-        } else {
-          setRegisterError("Số CCCD/CMND này đã được sử dụng bởi một tài khoản khác.");
-        }
-        isProcessingRef.current = false;
-        setIsGlobalProcessing(false);
-        return;
-      }
+      
+      // Removed local registeredUsers check to avoid stale data issues after reset.
+      // The server (/api/register) already performs this check against the source of truth.
 
       const format = getSystemFormat(settings, 'user', '{RANDOM 4 SỐ}');
       const newUserId = generateUserId(format, settings);
@@ -2565,6 +2567,7 @@ const App: React.FC = () => {
       if (targetView === AppView.LOGIN) {
         localStorage.removeItem('ndv_user_id');
         setUser(null);
+        setRegisteredUsers([]); // Clear users list to prevent stale data on next registration
       }
       
       // Force immediate data fetch
@@ -2698,7 +2701,7 @@ const App: React.FC = () => {
             onBack={() => {
               setSettleLoanFromDash(null);
               setViewLoanFromDash(null);
-              setCurrentView(AppView.DASHBOARD);
+              setCurrentView(user?.isAdmin ? AppView.ADMIN_DASHBOARD : AppView.DASHBOARD);
             }}
             token={token}
             initialLoanToSettle={settleLoanFromDash}
@@ -2706,12 +2709,12 @@ const App: React.FC = () => {
             settings={settings}
           />
         );
-      case AppView.RANK_LIMITS: return <RankLimits user={user} isGlobalProcessing={isGlobalProcessing} onBack={() => setCurrentView(AppView.DASHBOARD)} onUpgrade={handleUpgradeRank} onPayOSUpgrade={(rank, amount) => handlePayOSPayment('UPGRADE', user?.id || '', amount, rank)} onCancelUpgrade={handleCancelUpgrade} settings={settings} />;
+      case AppView.RANK_LIMITS: return <RankLimits user={user} isGlobalProcessing={isGlobalProcessing} onBack={() => setCurrentView(user?.isAdmin ? AppView.ADMIN_DASHBOARD : AppView.DASHBOARD)} onUpgrade={handleUpgradeRank} onPayOSUpgrade={(rank, amount) => handlePayOSPayment('UPGRADE', user?.id || '', amount, rank)} onCancelUpgrade={handleCancelUpgrade} settings={settings} />;
       case AppView.PROFILE: 
         return (
           <Profile 
             user={user} 
-            onBack={() => setCurrentView(AppView.DASHBOARD)} 
+            onBack={() => setCurrentView(user?.isAdmin ? AppView.ADMIN_DASHBOARD : AppView.DASHBOARD)} 
             onLogout={handleLogout} 
             onUpdateBank={handleUpdateBank}
             onUpdateProfile={handleUpdateProfile}

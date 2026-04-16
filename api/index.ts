@@ -2132,7 +2132,8 @@ router.post("/reset", async (req: any, res) => {
       return res.status(500).json({ error: "Lỗi khi xóa nhật ký ngân sách", details: budgetError });
     }
     
-    const { error: userError } = await client.from('users').delete().neq('isAdmin', true);
+    // Robust delete for non-admins (including NULL isAdmin)
+    const { error: userError } = await client.from('users').delete().or('isAdmin.eq.false,isAdmin.is.null');
     if (userError) {
       console.error("[RESET] Error deleting users:", userError);
       return res.status(500).json({ error: "Lỗi khi xóa người dùng", details: userError });
