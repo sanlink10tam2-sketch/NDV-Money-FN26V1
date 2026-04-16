@@ -1524,6 +1524,13 @@ const App: React.FC = () => {
       return;
     }
 
+    // Kiểm tra ngân sách hệ thống trước khi nộp đơn
+    const minBudget = Number(settings.MIN_SYSTEM_BUDGET || 1000000);
+    if (systemBudget < minBudget) {
+      toast.error("Hệ thống đang bảo trì nguồn vốn. Vui lòng quay lại sau.");
+      return;
+    }
+
     isProcessingRef.current = true;
     lastActionTimestamp.current = Date.now();
     // No global processing for 0ms feel

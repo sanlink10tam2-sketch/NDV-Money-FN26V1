@@ -675,11 +675,11 @@ const RankLimits: React.FC<RankLimitsProps> = ({ user, isGlobalProcessing, onBac
               </div>
               <div className="flex gap-3">
                 <div className="w-6 h-6 bg-[#ff8c00] rounded-full flex items-center justify-center shrink-0 font-black text-[12px] text-black">2</div>
-                <p className="text-[12px] font-bold text-gray-300 leading-relaxed">Phí nâng hạng được tính là {settings.UPGRADE_PERCENT}% dựa trên hạn mức tối đa của cấp bậc mục tiêu bạn muốn đạt đến.</p>
+                <p className="text-[12px] font-bold text-gray-300 leading-relaxed">Sau khi thanh toán thành công, hệ thống sẽ tự động cập nhật cấp bậc mới cho tài khoản của bạn ngay lập tức.</p>
               </div>
               <div className="flex gap-3">
                 <div className="w-6 h-6 bg-[#ff8c00] rounded-full flex items-center justify-center shrink-0 font-black text-[12px] text-black">3</div>
-                <p className="text-[12px] font-bold text-gray-300 leading-relaxed">Sau khi gửi yêu cầu và biên lai, vui lòng đợi hệ thống kiểm tra và phê duyệt trong vòng 5-15 phút (giờ hành chính).</p>
+                <p className="text-[12px] font-bold text-gray-300 leading-relaxed">Nếu sử dụng VietQR, vui lòng đợi bộ phận kế toán kiểm tra và phê duyệt trong vòng 5-15 phút (giờ hành chính).</p>
               </div>
            </div>
         </div>

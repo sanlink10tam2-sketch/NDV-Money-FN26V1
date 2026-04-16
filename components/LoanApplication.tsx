@@ -250,7 +250,7 @@ const LoanApplication: React.FC<LoanApplicationProps> = ({ user, loans, systemBu
   const actualMaxAllowed = Math.min(userAvailableBalance, systemBudget);
   const totalLimitCap = Number(settings.MAX_SINGLE_LOAN_AMOUNT || 10000000);
 
-  const isSystemOutOfCapital = systemBudget < Number(settings.MIN_SYSTEM_BUDGET || 1000000);
+  const isSystemOutOfCapital = systemBudget <= 0 || systemBudget < Number(settings.MIN_SYSTEM_BUDGET || 1000000);
 
   const nextSequence = (user?.lastLoanSeq || 0) + 1;
   const nextContractId = useMemo(() => {
@@ -432,14 +432,12 @@ const LoanApplication: React.FC<LoanApplicationProps> = ({ user, loans, systemBu
                     <span className="text-[#ff8c00]">Quy trình:</span> Hệ thống chỉ xử lý duy nhất 01 yêu cầu vay tại một thời điểm. Vui lòng tất toán khoản vay cũ để đăng ký khoản mới.
                   </p>
                 </div>
-                {Number(settings.PRE_DISBURSEMENT_FEE) > 0 && (
-                  <div className="flex gap-3">
-                    <div className="w-6 h-6 bg-[#ff8c00] rounded-full flex items-center justify-center shrink-0 font-black text-[12px] text-black">6</div>
-                    <p className="text-[12px] font-bold text-gray-300 leading-relaxed">
-                      <span className="text-[#ff8c00]">Phí hồ sơ:</span> Phí xét duyệt và giải ngân là {settings.PRE_DISBURSEMENT_FEE}% trên tổng số tiền vay, được khấu trừ trực tiếp khi giải ngân.
-                    </p>
-                  </div>
-                )}
+                <div className="flex gap-3">
+                  <div className="w-6 h-6 bg-[#ff8c00] rounded-full flex items-center justify-center shrink-0 font-black text-[12px] text-black">6</div>
+                  <p className="text-[12px] font-bold text-gray-300 leading-relaxed">
+                    <span className="text-[#ff8c00]">Bảo mật:</span> Mọi thông tin khoản vay đều được mã hóa và bảo vệ bởi hệ thống NDV-SAFE, đảm bảo an toàn tuyệt đối.
+                  </p>
+                </div>
               </div>
           </div>
         )}

@@ -1152,14 +1152,19 @@ router.post("/login", async (req, res) => {
         // Check password
         if (user.password && typeof user.password === 'string') {
           try {
-            // Robust check for bcrypt hash: starts with $2a$, $2b$, or $2y$ and has correct length
-            const isBcryptHash = /^\$2[aby]\$\d+\$.{53}$/.test(user.password);
+            // Robust check for bcrypt hash: starts with $2a$, $2b$, or $2y$, has 2-digit cost, and 53 base64 characters
+            const isBcryptHash = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(user.password);
             
             let isMatch = false;
             if (isBcryptHash) {
-              isMatch = await bcrypt.compare(String(password), user.password);
+              try {
+                isMatch = await bcrypt.compare(String(password), user.password);
+              } catch (compareError) {
+                console.warn("[LOGIN] Bcrypt compare failed, falling back to plain text:", compareError);
+                isMatch = String(password) === user.password;
+              }
             } else {
-              // Fallback for plain text passwords (useful for manual edits in DB or initial setup)
+              // Fallback for plain text passwords
               isMatch = String(password) === user.password;
               
               // If it matched plain text, we should ideally hash it now for future use
@@ -1633,6 +1638,23 @@ router.post("/loans", async (req: any, res) => {
     const sanitizedLoans = sanitizeData(incomingLoans, LOAN_COLUMNS);
     if (sanitizedLoans.length === 0) {
       return res.status(400).json({ error: "Không có dữ liệu hợp lệ để lưu" });
+    }
+
+    // Budget check for new loans (if not admin)
+    if (!req.user?.isAdmin) {
+      const isNewLoan = sanitizedLoans.some(l => l.status === 'CHỜ DUYỆT');
+      if (isNewLoan) {
+        const settings = await getMergedSettings(client);
+        const minBudget = Number(settings.MIN_SYSTEM_BUDGET || 1000000);
+        const currentBudget = Number(settings.SYSTEM_BUDGET || 0);
+        
+        if (currentBudget < minBudget) {
+          return res.status(400).json({ 
+            error: "Hệ thống bảo trì", 
+            message: "Hệ thống đang bảo trì nguồn vốn. Vui lòng quay lại sau." 
+          });
+        }
+      }
     }
 
     // Bulk upsert with fallback for missing columns
