@@ -1276,9 +1276,14 @@ router.post("/register", async (req, res) => {
     
     const { data: existingUsers, error: checkError } = await query.limit(1);
     
-    if (checkError) throw checkError;
+    if (checkError) {
+      console.error("[REGISTER] Error checking existing users:", checkError);
+      return res.status(500).json({ error: "Lỗi kiểm tra tài khoản tồn tại" });
+    }
+
     if (existingUsers && existingUsers.length > 0) {
       const existing = existingUsers[0];
+      console.log("[REGISTER] Found existing user causing conflict:", existing);
       if (existing.phone === userData.phone) {
         return res.status(400).json({ error: "Số điện thoại này đã được đăng ký." });
       } else if (userData.refZalo && existing.refZalo === userData.refZalo) {
@@ -2109,10 +2114,35 @@ router.post("/reset", async (req: any, res) => {
     
     // Delete all data except admin
     // Must delete children first due to foreign key constraints
-    await client.from('loans').delete().neq('id', 'KEEP_NONE');
-    await client.from('notifications').delete().neq('id', 'KEEP_NONE');
-    await client.from('budget_logs').delete().neq('id', 'KEEP_NONE');
-    await client.from('users').delete().eq('isAdmin', false);
+    const { error: loanError } = await client.from('loans').delete().neq('id', 'KEEP_NONE');
+    if (loanError) {
+      console.error("[RESET] Error deleting loans:", loanError);
+      return res.status(500).json({ error: "Lỗi khi xóa dữ liệu khoản vay", details: loanError });
+    }
+    
+    const { error: notifError } = await client.from('notifications').delete().neq('id', 'KEEP_NONE');
+    if (notifError) {
+      console.error("[RESET] Error deleting notifications:", notifError);
+      return res.status(500).json({ error: "Lỗi khi xóa thông báo", details: notifError });
+    }
+    
+    const { error: budgetError } = await client.from('budget_logs').delete().neq('id', 'KEEP_NONE');
+    if (budgetError) {
+      console.error("[RESET] Error deleting budget logs:", budgetError);
+      return res.status(500).json({ error: "Lỗi khi xóa nhật ký ngân sách", details: budgetError });
+    }
+    
+    const { error: userError } = await client.from('users').delete().neq('isAdmin', true);
+    if (userError) {
+      console.error("[RESET] Error deleting users:", userError);
+      return res.status(500).json({ error: "Lỗi khi xóa người dùng", details: userError });
+    }
+
+    // Verify deletion
+    const { count, error: countError } = await client.from('users').select('*', { count: 'exact', head: true });
+    if (!countError) {
+      console.log(`[RESET] Users remaining after reset: ${count}`);
+    }
     
     // Reset config values
     await Promise.all([
