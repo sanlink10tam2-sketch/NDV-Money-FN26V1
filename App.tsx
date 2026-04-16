@@ -73,7 +73,22 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 }
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<AppView>(AppView.LOGIN);
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    const savedLocal = localStorage.getItem('vnv_user');
+    const savedSession = sessionStorage.getItem('vnv_user');
+    const saved = savedLocal || savedSession;
+    
+    if (saved && saved !== 'null' && saved !== '') {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.isAdmin) return AppView.ADMIN_DASHBOARD;
+        if (parsed) return AppView.DASHBOARD;
+      } catch (e) {
+        return AppView.LOGIN;
+      }
+    }
+    return AppView.LOGIN;
+  });
   const [settleLoanFromDash, setSettleLoanFromDash] = useState<LoanRecord | null>(null);
   const [viewLoanFromDash, setViewLoanFromDash] = useState<LoanRecord | null>(null);
   const [user, setUser] = useState<User | null>(() => {
@@ -916,7 +931,7 @@ const App: React.FC = () => {
       console.log('[SOCKET] Payment success:', data);
       fetchData(true);
       // Only redirect to Dashboard if NOT an admin
-      if (!user?.isAdmin) {
+      if (user && !user.isAdmin) {
         setCurrentView(AppView.DASHBOARD);
       }
     });
@@ -925,7 +940,7 @@ const App: React.FC = () => {
       console.log('[SOCKET] Rank upgrade success:', data);
       fetchData(true);
       // Only redirect to Dashboard if NOT an admin
-      if (!user?.isAdmin) {
+      if (user && !user.isAdmin) {
         setCurrentView(AppView.DASHBOARD);
       }
     });
@@ -949,7 +964,7 @@ const App: React.FC = () => {
       if (payment === 'success') {
         // Only redirect to Dashboard if NOT an admin
         console.log('[PAYOS] Payment success, checking redirect');
-        if (!user?.isAdmin) {
+        if (user && !user.isAdmin) {
           setCurrentView(AppView.DASHBOARD);
         }
         
@@ -960,7 +975,7 @@ const App: React.FC = () => {
         // Chuyển về trang đang thao tác khi thất bại hoặc huỷ
         if (screen && Object.values(AppView).includes(screen as AppView)) {
           setCurrentView(screen as AppView);
-        } else if (!user?.isAdmin) {
+        } else if (user && !user.isAdmin) {
           // Fallback to Dashboard if screen is invalid and NOT an admin
           setCurrentView(AppView.DASHBOARD);
         }
